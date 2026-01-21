@@ -9,32 +9,36 @@ function base64ToUint8Array(b64: string) {
   return bytes;
 }
 
+// Recall is little-endian PCM16 mono
 function pcm16BytesToFloat32(bytes: Uint8Array) {
-  const pcm16 = new Int16Array(bytes.buffer, bytes.byteOffset, Math.floor(bytes.byteLength / 2));
-  const floats = new Float32Array(pcm16.length);
-  for (let i = 0; i < pcm16.length; i++) floats[i] = pcm16[i] / 32768;
-  return floats;
+  const sampleCount = Math.floor(bytes.byteLength / 2);
+  const out = new Float32Array(sampleCount);
+
+  for (let i = 0; i < sampleCount; i++) {
+    const lo = bytes[i * 2]!;
+    const hi = bytes[i * 2 + 1]!;
+    let v = (hi << 8) | lo;
+    if (v & 0x8000) v = v - 0x10000; // signed
+    out[i] = v / 32768;
+  }
+
+  return out;
 }
 
 function getPcmBase64FromMessage(msg: RecallWsMsg): string | null {
   // supports both shapes you’ve seen:
   // A) simplified: msg.bufferBase64
   // B) wrapped Recall payload: msg.msg.data.data.buffer
-  return (
-    msg?.bufferBase64 ??
-    msg?.msg?.data?.data?.buffer ??
-    null
-  );
+  return msg?.bufferBase64 ?? msg?.msg?.data?.data?.buffer ?? null;
 }
 
 export function useRecallWebmStreamPlayer(args: {
   wsUrl: string | null;
-  // Recall is 16kHz mono PCM16:
-  sampleRate?: number;
-  // How often to emit WebM chunks:
+  sampleRate?: number; // Recall is typically 16kHz
   recorderTimesliceMs?: number;
+  onPcmFloat32?: (pcm: Float32Array, meta: { sampleRate: number; msg: RecallWsMsg }) => void;
 }) {
-  const { wsUrl, sampleRate = 16000, recorderTimesliceMs = 1000 } = args;
+  const { wsUrl, sampleRate = 16000, recorderTimesliceMs = 1000, onPcmFloat32 } = args;
 
   const [isRunning, setIsRunning] = useState(false);
   const [lastWebmUrl, setLastWebmUrl] = useState<string | null>(null);
@@ -72,25 +76,23 @@ export function useRecallWebmStreamPlayer(args: {
 
     if (lastUrlRef.current) URL.revokeObjectURL(lastUrlRef.current);
     lastUrlRef.current = null;
+
     setLastWebmUrl(null);
   }, []);
 
-  const start = useCallback(async () => {
-    if (!wsUrl) throw new Error("wsUrl is required");
-    if (isRunning) return;
+  // Must be triggered from a user gesture (e.g. button click) in most browsers.
+  // Call this FIRST in your "one click" flow, before any awaits (fetch, etc).
+  const prepareAudio = useCallback(async () => {
+    if (audioCtxRef.current) return;
 
-    // must be called from a user gesture (button click) in most browsers
     const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
     await audioCtx.resume();
 
     const gain = audioCtx.createGain();
     gain.gain.value = 1.0;
 
-    // This is the key trick:
-    // - connect audio to speakers (for playback)
-    // - also connect to a MediaStreamDestination (for WebM encoding via MediaRecorder)
+    // Playback + record
     const dest = audioCtx.createMediaStreamDestination();
-
     gain.connect(audioCtx.destination);
     gain.connect(dest);
 
@@ -103,7 +105,6 @@ export function useRecallWebmStreamPlayer(args: {
     recorder.ondataavailable = (e) => {
       if (!e.data || e.data.size === 0) return;
 
-      // Update a rolling URL (for quick manual download / inspection)
       const url = URL.createObjectURL(e.data);
       if (lastUrlRef.current) URL.revokeObjectURL(lastUrlRef.current);
       lastUrlRef.current = url;
@@ -118,62 +119,109 @@ export function useRecallWebmStreamPlayer(args: {
 
     recorder.start(recorderTimesliceMs);
 
-    const ws = new WebSocket(wsUrl);
-
-    ws.onopen = () => {
-      console.log("Recall stream ws open");
-      setIsRunning(true);
-    };
-
-    ws.onclose = () => {
-      console.log("Recall stream ws closed");
-      stop();
-    };
-
-    ws.onerror = (e) => {
-      console.error("Recall stream ws error", e);
-      stop();
-    };
-
-    ws.onmessage = (ev) => {
-      const msg = JSON.parse(ev.data);
-      const b64 = getPcmBase64FromMessage(msg);
-      if (!b64) return;
-
-      const bytes = base64ToUint8Array(b64);
-      if (bytes.byteLength < 2) return;
-
-      const floats = pcm16BytesToFloat32(bytes);
-
-      const buf = audioCtx.createBuffer(1, floats.length, sampleRate);
-      buf.copyToChannel(floats, 0);
-
-      const src = audioCtx.createBufferSource();
-      src.buffer = buf;
-      src.connect(gain);
-
-      const now = audioCtx.currentTime;
-      if (playAtRef.current < now) playAtRef.current = now; // catch up if we fall behind
-      src.start(playAtRef.current);
-      playAtRef.current += buf.duration;
-    };
-
     audioCtxRef.current = audioCtx;
     gainRef.current = gain;
     destRef.current = dest;
     recorderRef.current = recorder;
-    wsRef.current = ws;
     playAtRef.current = audioCtx.currentTime;
-  }, [wsUrl, isRunning, stop, sampleRate, recorderTimesliceMs]);
+  }, [recorderTimesliceMs]);
+
+  // Connect the websocket after you have a URL (can be after awaits).
+  // Requires prepareAudio() to have been called first.
+  const connect = useCallback(
+    (url: string) => {
+      if (!url) throw new Error("connect(url): url is required");
+
+      const audioCtx = audioCtxRef.current;
+      const gain = gainRef.current;
+      if (!audioCtx || !gain) {
+        throw new Error("Call prepareAudio() before connect()");
+      }
+
+      // If already connected, stop first
+      if (wsRef.current) stop();
+
+      const ws = new WebSocket(url);
+
+      ws.onopen = () => {
+        console.log("Recall stream ws open");
+        setIsRunning(true);
+      };
+
+      ws.onclose = () => {
+        console.log("Recall stream ws closed");
+        stop();
+      };
+
+      ws.onerror = (e) => {
+        console.error("Recall stream ws error", e);
+        stop();
+      };
+
+      ws.onmessage = (ev) => {
+        const msg = JSON.parse(ev.data);
+        const b64 = getPcmBase64FromMessage(msg);
+        if (!b64) return;
+
+        const bytes = base64ToUint8Array(b64);
+        if (bytes.byteLength < 2) return;
+
+        const floats = pcm16BytesToFloat32(bytes);
+
+        onPcmFloat32?.(floats, { sampleRate, msg });
+
+        const buf = audioCtx.createBuffer(1, floats.length, sampleRate);
+        buf.copyToChannel(floats, 0);
+
+        const src = audioCtx.createBufferSource();
+        src.buffer = buf;
+        src.connect(gain);
+
+        const now = audioCtx.currentTime;
+        if (playAtRef.current < now) playAtRef.current = now; // catch up if we fall behind
+        src.start(playAtRef.current);
+        playAtRef.current += buf.duration;
+      };
+
+      wsRef.current = ws;
+    },
+    [onPcmFloat32, sampleRate, stop],
+  );
+
+  // Convenience: old API “start()” still works.
+  // If you want one-click seamless: call prepareAudio() first (same click), then call start(urlFromBot).
+  const start = useCallback(
+    async (overrideWsUrl?: string) => {
+      const url = overrideWsUrl ?? wsUrl;
+      if (!url) throw new Error("wsUrl is required");
+
+      await prepareAudio();
+      connect(url);
+    },
+    [wsUrl, prepareAudio, connect],
+  );
 
   const clear = useCallback(() => {
     setIsRunning(false);
     setLastWebmUrl(null);
     setWebmChunkCount(0);
-  }, []);   
+  }, []);
 
   // cleanup on unmount
   useEffect(() => stop, [stop]);
 
-  return { start, stop, clear, isRunning, lastWebmUrl, webmChunkCount };
+  return {
+    // for one-click flows:
+    prepareAudio,
+    connect,
+
+    // convenient combined call:
+    start,
+
+    stop,
+    clear,
+    isRunning,
+    lastWebmUrl,
+    webmChunkCount,
+  };
 }
