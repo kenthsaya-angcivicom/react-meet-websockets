@@ -21,8 +21,6 @@ type BotStatus = {
 
 export default function BotData({botId}: {botId: string}) {
 
-    console.log('BotData: ', botId);
-
     const { data: botData, isLoading, error } = useQuery<BotStatus>({
         queryKey: ['botStatus', botId],
         queryFn: async () => {  
@@ -37,8 +35,6 @@ export default function BotData({botId}: {botId: string}) {
         enabled: !!botId,
         // refetchInterval: 1000,
     });  
-
-
 
   const renderContent = () => {
 

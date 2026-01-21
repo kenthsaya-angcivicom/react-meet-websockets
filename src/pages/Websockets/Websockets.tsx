@@ -1,8 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import BotData from './BotStatus';
 import { useRecallWebmStreamPlayer } from '@/hooks/useRecallWebmStreamPlayer';
+import { useAudioFrequencyVisualizer } from '@/hooks/useAudioFrequencyVisualizer';
+import { AudioFrequencyVisualizer } from './AudioFrequencyVisualizer';
+import { useAudioVisualizer } from '@/hooks/useAudioVisualizer';
+import { AudioVisualizer } from './AudioVisualizer';
+
 
 export function Websockets() {
 
@@ -13,8 +18,26 @@ export function Websockets() {
     ? `ws://localhost:8080/stream?botId=${encodeURIComponent(meetBot.botId)}`
     : null;
 
-  const { prepareAudio, connect, start, stop, clear, isRunning: streamIsRunning, lastWebmUrl, webmChunkCount } =
-    useRecallWebmStreamPlayer({ wsUrl, recorderTimesliceMs: 1000 });
+  const { audioData, isVisualizing, pushFloat32, start: startViz, stop: stopViz, clear: clearViz } =
+    useAudioFrequencyVisualizer({ sampleRate: 16000, fftSize: 256, debug: false });
+
+  const ampViz = useAudioVisualizer({
+    sampleRate: 16000,
+    maxBufferSeconds: 2,
+    targetFps: 30,
+    debug: false,
+  });
+
+  const { prepareAudio, start, stop, clear, isRunning: streamIsRunning, lastWebmUrl, webmChunkCount } =
+    useRecallWebmStreamPlayer({
+      wsUrl,
+      recorderTimesliceMs: 1000,
+      // Feed the visualizer from the SAME websocket stream (no duplicate WS).
+      onPcmFloat32: (pcm) => {
+        pushFloat32(pcm);
+        ampViz.pushFloat32(pcm);
+      },
+    });
 
   async function healthCheck() {
     console.log('Health Check');
@@ -27,7 +50,10 @@ export function Websockets() {
   }
 
   async function initializeMeetBot() {
+    // One-click flow: prepare audio + start visualizer during the user gesture,
+    // BEFORE any awaits that might break autoplay permissions.
     await prepareAudio();
+    startViz();
 
     const response = await fetch(`/api/telehealth/bot`, {
       method: 'POST',
@@ -42,38 +68,16 @@ export function Websockets() {
     console.log('Meet Bot', data);
 
     const url = `ws://localhost:8080/stream?botId=${encodeURIComponent(data.data.botId)}`;
-    connect(url);
+    await start(url);
   }
 
   async function clearBot() {
     setMeetBot(null);
     clear();
+    clearViz();
+    ampViz.clear();
+    stopViz();
   }
-
-  useEffect(() => {
-
-    if (!meetBot) return;
-
-    const ws = new WebSocket(
-      `ws://localhost:8080/stream?botId=${encodeURIComponent(meetBot.botId)}`
-    );
-
-    ws.onopen = () => console.log("stream ws open");
-    ws.onmessage = (ev) => {
-      const msg = JSON.parse(ev.data);
-
-      if (msg.type === "pcm_chunk") {
-        console.log('msg', msg);
-        // pushPcm16Base64(msg);
-      } else {
-        console.log("ws msg", msg);
-      }
-    };
-    ws.onerror = (e) => console.log("ws error", e);
-    ws.onclose = () => console.log("stream ws closed");
-
-    return () => ws.close();
-  }, [meetBot?.botId]);
 
   return (
     <div className="flex flex-1 flex-col min-h-0 overflow-y-auto">
@@ -99,14 +103,27 @@ export function Websockets() {
             <div>
               <Button
                 onClick={async () => {
-                  try { await start(); } catch (e) { console.error(e); }
+                  try {
+                    // If user manually starts, ensure the visualizer is started too.
+                    await startViz();
+                    await start();
+                  } catch (e) {
+                    console.error(e);
+                  }
                 }}
                 disabled={!meetBot?.botId || streamIsRunning}
               >
                 Start Playback + WebM Encode
               </Button>
 
-              <Button onClick={stop} disabled={!streamIsRunning} variant="outline">
+              <Button
+                onClick={() => {
+                  stop();
+                  stopViz();
+                }}
+                disabled={!streamIsRunning}
+                variant="outline"
+              >
                 Stop
               </Button>
 
@@ -121,6 +138,19 @@ export function Websockets() {
                   </>
                 ) : null}
               </div>
+
+              {/* Audio Visualizer */}
+              {/* {meetBot && ( */}
+                <div className="mt-4">
+                <AudioFrequencyVisualizer 
+                  audioData={audioData} 
+                  isVisualizing={isVisualizing}
+                />
+                </div>
+                <div className="mt-4">
+                  <AudioVisualizer canvasRef={ampViz.canvasRef} />
+                </div>
+              {/* )} */}
 
               {meetBot && <BotData botId={meetBot.id || ''} />}
 
