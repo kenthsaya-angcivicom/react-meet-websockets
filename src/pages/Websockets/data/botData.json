@@ -1,0 +1,172 @@
+{
+    "id": "ea9a1653-e3db-41af-ae04-173222b44ae9",
+    "meeting_url": {
+      "meeting_id": "bmi-gzcx-udt",
+      "platform": "google_meet"
+    },
+    "bot_name": "Test Bot",
+    "join_at": "2026-01-21T00:49:00.615941Z",
+    "recording_config": {
+      "realtime_endpoints": [
+        {
+          "type": "websocket",
+          "url": "wss://unseductive-untemperable-alden.ngrok-free.dev/recall/webhook",
+          "events": [
+            "audio_mixed_raw.data"
+          ]
+        }
+      ],
+      "retention": {
+        "type": "forever"
+      },
+      "video_mixed_layout": "speaker_view",
+      "video_mixed_mp4": {},
+      "participant_events": {},
+      "meeting_metadata": {},
+      "video_mixed_participant_video_when_screenshare": "overlap",
+      "start_recording_on": "participant_join",
+      "audio_mixed_raw": {},
+      "audio_mixed_mp3": {}
+    },
+    "status_changes": [
+      {
+        "code": "joining_call",
+        "message": null,
+        "created_at": "2026-01-21T00:49:05.037680Z",
+        "sub_code": null
+      },
+      {
+        "code": "in_waiting_room",
+        "message": null,
+        "created_at": "2026-01-21T00:49:15.981643Z",
+        "sub_code": null
+      },
+      {
+        "code": "in_call_not_recording",
+        "message": null,
+        "created_at": "2026-01-21T00:49:20.773335Z",
+        "sub_code": null
+      },
+      {
+        "code": "in_call_recording",
+        "message": null,
+        "created_at": "2026-01-21T00:49:21.355129Z",
+        "sub_code": null
+      },
+      {
+        "code": "call_ended",
+        "message": null,
+        "created_at": "2026-01-21T00:49:40.354397Z",
+        "sub_code": "bot_kicked_from_call"
+      },
+      {
+        "code": "recording_done",
+        "message": null,
+        "created_at": "2026-01-21T00:49:41.692509Z",
+        "sub_code": null
+      },
+      {
+        "code": "done",
+        "message": null,
+        "created_at": "2026-01-21T00:49:41.904746Z",
+        "sub_code": null
+      }
+    ],
+    "recordings": [
+      {
+        "id": "48a0f98a-241f-45a9-bb24-e734e4b31d38",
+        "created_at": "2026-01-21T00:49:21.355129Z",
+        "started_at": "2026-01-21T00:49:21.355129Z",
+        "completed_at": "2026-01-21T00:49:41.692509Z",
+        "expires_at": null,
+        "status": {
+          "code": "done",
+          "sub_code": null,
+          "updated_at": "2026-01-21T00:49:41.692509Z"
+        },
+        "media_shortcuts": {
+          "video_mixed": {
+            "id": "412e6500-0494-49ba-864f-63f65b3f01f3",
+            "created_at": "2026-01-21T00:49:21.355129Z",
+            "status": {
+              "code": "done",
+              "sub_code": null,
+              "updated_at": "2026-01-21T00:49:41.692509Z"
+            },
+            "metadata": {},
+            "data": {
+              "download_url": "https://us-west-2-recallai-production-bot-data.s3.amazonaws.com/_workspace-94024d2d-6fd3-4583-bb2d-7b038404dc12/recordings/48a0f98a-241f-45a9-bb24-e734e4b31d38/video_mixed/412e6500-0494-49ba-864f-63f65b3f01f3/bot/ea9a1653-e3db-41af-ae04-173222b44ae9/AROA3Z2PRSQANGTUQXHNJ%3Ai-08106bc7f29e8a581/video.mp4?AWSAccessKeyId=ASIA3Z2PRSQABGV5OVL5&Signature=761yLSMJYd5XqpunUA9yVxVif0E%3D&x-amz-security-token=IQoJb3JpZ2luX2VjEPD%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEaCXVzLXdlc3QtMiJHMEUCIQDWEIumSFOBs4EJ1uf4H0VC9EXnurQIIVUaxC7uyKH%2BpwIgAq56xzjWT4oY6XJRjDVJePmcUbJQzSFSNCcUzDbBvYwqwwUIuf%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FARAAGgw4MTEzNzg3NzUwNDAiDIPMaFUrXhQoro63DyqXBaEnN6m2lcqHStWofdMciuxganoD09II9vhvFQA9TtH%2BG%2Bx3eot4%2F6q0I0uzhTqxzLILA%2BlJBGBfQzhuWoVhhQUWLYgKm1UyzGEJlJwaM3TYPzkJ6iqNnP11pavxYXRN8h3wua11rz5wAj0jqKKe%2FBoE5OqTE8GMuS5Z61MtzRWsaS%2Bp0Daw9m6jXeoaeWZU64KhRgSNg%2FzFqkE2W%2FSUlkfzXR%2FPq1gi14%2FztgphTiFddCdA1PHqEADUlLAuJVly8518al%2Fnu8ZboVWBjjej0u0DBPY5repibdXkzQnxnxgz661eS%2FXsK0AiUMhJMachCnbxNNtLdNghtYkzRQJ2I7KhgYhImwwmbkV3McpBWQCVsd2abIRqTH1QK8xKO%2BfqjohcVmuwOZUqYBMzlvWgTsRmZ9RiU8V%2BZX%2Bbixi7%2BzqI1U3Es6miUFCadWrLnsmy0UhXLJpBJmxEAqibb3UQmdgE3DcON5nah00W4Z%2FCL749wg4QIU50UIw8PbNz7cqaXI834CY1kGtW16Rc1HbX0b41VOpeq9Ux41X%2Bx3y6%2Fp%2Bs6K4sXCS9O7l3VfH9HOzQr458aelIiUcJrdyLxKL3xs%2FdzVfQTTEsL0e4cLyYM5mbANkFHOmj0PCK27szBTe3b5GT2VZtFltD9F6zUlF%2FyOsin95yT1uHYFa%2B7DGl1zhY0LJwqQDskQAt0PhOFit6xAcV%2FR9vIi%2B2ePfY37flq51sGLiLJ%2Fwvh9Gystdw3s2xxojFjLhNhzqiL7KUhfnmYI8Xzn4EaU4iuWoIM6VSg%2Bkdw%2BJ1GGY6AbUe%2Bp51jEkdUu26ygw%2F%2B%2F2Ph9%2FA8Om2JmaNeBv9qExUvogUVN%2FBrUIfxa1pqbUKWLpFq3wjdqDJf%2FWSNzJE9TDHpsDLBjqxARd4wCgo99ElQ46nKGGRHtnYdlmqBwRk0Nua8n55NjgNtCdSICVDsJJ6Gj80fEwjrlSsOw%2B3j9S0T4ZEhdd6QECFxougV00iFZAKyutvUHVwFLYesk1zsMl39jfQrEqA0GMuH6F9TZvw1OSVCN5nP3n%2FonhUB8HRX57%2FlgTRClFMLUBMaa51lOGTyxfHw9yigglFiucNnOvMs5qvX0lLjct6Uryln8YnhUDDqRI0R24dXw%3D%3D&Expires=1768978236"
+            },
+            "format": "mp4"
+          },
+          "transcript": null,
+          "participant_events": {
+            "id": "f2be603d-0da7-4ded-bada-49bb3a141f2c",
+            "created_at": "2026-01-21T00:49:21.355129Z",
+            "status": {
+              "code": "done",
+              "sub_code": null,
+              "updated_at": "2026-01-21T00:49:41.692509Z"
+            },
+            "metadata": {},
+            "data": {
+              "participant_events_download_url": "https://us-west-2.recall.ai/api/v1/download/participant_events?token=eyJpZCI6ImYyYmU2MDNkLTBkYTctNGRlZC1iYWRhLTQ5YmIzYTE0MWYyYyJ9%3A1viMQe%3A9oknQi5dxK1N-apPioHfg4hE8kdF5P8FFwlFhSjPx2c",
+              "speaker_timeline_download_url": "https://us-west-2.recall.ai/api/v1/download/speaker_timeline?token=eyJpZCI6ImYyYmU2MDNkLTBkYTctNGRlZC1iYWRhLTQ5YmIzYTE0MWYyYyJ9%3A1viMQe%3A9oknQi5dxK1N-apPioHfg4hE8kdF5P8FFwlFhSjPx2c",
+              "participants_download_url": "https://us-west-2.recall.ai/api/v1/download/participants?token=eyJpZCI6ImYyYmU2MDNkLTBkYTctNGRlZC1iYWRhLTQ5YmIzYTE0MWYyYyJ9%3A1viMQe%3A9oknQi5dxK1N-apPioHfg4hE8kdF5P8FFwlFhSjPx2c"
+            }
+          },
+          "meeting_metadata": {
+            "id": "93e8ecdb-b9eb-465a-9c06-fd0bacc8b7c3",
+            "created_at": "2026-01-21T00:49:21.355129Z",
+            "status": {
+              "code": "done",
+              "sub_code": null,
+              "updated_at": "2026-01-21T00:49:41.692509Z"
+            },
+            "metadata": {},
+            "data": {
+              "title": null,
+              "zoom": null
+            }
+          },
+          "audio_mixed": {
+            "id": "68535d72-7213-4256-a2f1-e67333c6322a",
+            "created_at": "2026-01-21T00:49:21.355129Z",
+            "status": {
+              "code": "done",
+              "sub_code": null,
+              "updated_at": "2026-01-21T00:49:41.692509Z"
+            },
+            "metadata": {},
+            "data": {
+              "download_url": "https://us-west-2-recallai-production-bot-data.s3.amazonaws.com/_workspace-94024d2d-6fd3-4583-bb2d-7b038404dc12/recordings/48a0f98a-241f-45a9-bb24-e734e4b31d38/audio_mixed/68535d72-7213-4256-a2f1-e67333c6322a/bot/ea9a1653-e3db-41af-ae04-173222b44ae9/AROA3Z2PRSQANGTUQXHNJ%3Ai-08106bc7f29e8a581/audio.mp3?AWSAccessKeyId=ASIA3Z2PRSQABGV5OVL5&Signature=ZXUxuT2x%2BmGwX58%2FUUC6SZRMSd4%3D&x-amz-security-token=IQoJb3JpZ2luX2VjEPD%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEaCXVzLXdlc3QtMiJHMEUCIQDWEIumSFOBs4EJ1uf4H0VC9EXnurQIIVUaxC7uyKH%2BpwIgAq56xzjWT4oY6XJRjDVJePmcUbJQzSFSNCcUzDbBvYwqwwUIuf%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FARAAGgw4MTEzNzg3NzUwNDAiDIPMaFUrXhQoro63DyqXBaEnN6m2lcqHStWofdMciuxganoD09II9vhvFQA9TtH%2BG%2Bx3eot4%2F6q0I0uzhTqxzLILA%2BlJBGBfQzhuWoVhhQUWLYgKm1UyzGEJlJwaM3TYPzkJ6iqNnP11pavxYXRN8h3wua11rz5wAj0jqKKe%2FBoE5OqTE8GMuS5Z61MtzRWsaS%2Bp0Daw9m6jXeoaeWZU64KhRgSNg%2FzFqkE2W%2FSUlkfzXR%2FPq1gi14%2FztgphTiFddCdA1PHqEADUlLAuJVly8518al%2Fnu8ZboVWBjjej0u0DBPY5repibdXkzQnxnxgz661eS%2FXsK0AiUMhJMachCnbxNNtLdNghtYkzRQJ2I7KhgYhImwwmbkV3McpBWQCVsd2abIRqTH1QK8xKO%2BfqjohcVmuwOZUqYBMzlvWgTsRmZ9RiU8V%2BZX%2Bbixi7%2BzqI1U3Es6miUFCadWrLnsmy0UhXLJpBJmxEAqibb3UQmdgE3DcON5nah00W4Z%2FCL749wg4QIU50UIw8PbNz7cqaXI834CY1kGtW16Rc1HbX0b41VOpeq9Ux41X%2Bx3y6%2Fp%2Bs6K4sXCS9O7l3VfH9HOzQr458aelIiUcJrdyLxKL3xs%2FdzVfQTTEsL0e4cLyYM5mbANkFHOmj0PCK27szBTe3b5GT2VZtFltD9F6zUlF%2FyOsin95yT1uHYFa%2B7DGl1zhY0LJwqQDskQAt0PhOFit6xAcV%2FR9vIi%2B2ePfY37flq51sGLiLJ%2Fwvh9Gystdw3s2xxojFjLhNhzqiL7KUhfnmYI8Xzn4EaU4iuWoIM6VSg%2Bkdw%2BJ1GGY6AbUe%2Bp51jEkdUu26ygw%2F%2B%2F2Ph9%2FA8Om2JmaNeBv9qExUvogUVN%2FBrUIfxa1pqbUKWLpFq3wjdqDJf%2FWSNzJE9TDHpsDLBjqxARd4wCgo99ElQ46nKGGRHtnYdlmqBwRk0Nua8n55NjgNtCdSICVDsJJ6Gj80fEwjrlSsOw%2B3j9S0T4ZEhdd6QECFxougV00iFZAKyutvUHVwFLYesk1zsMl39jfQrEqA0GMuH6F9TZvw1OSVCN5nP3n%2FonhUB8HRX57%2FlgTRClFMLUBMaa51lOGTyxfHw9yigglFiucNnOvMs5qvX0lLjct6Uryln8YnhUDDqRI0R24dXw%3D%3D&Expires=1768978236"
+            },
+            "format": "mp3"
+          }
+        },
+        "metadata": {}
+      }
+    ],
+    "automatic_leave": {
+      "waiting_room_timeout": 1200,
+      "noone_joined_timeout": 1200,
+      "everyone_left_timeout": {
+        "timeout": 2,
+        "activate_after": null
+      },
+      "in_call_not_recording_timeout": 3600,
+      "recording_permission_denied_timeout": 30,
+      "silence_detection": {
+        "timeout": 3600,
+        "activate_after": 1200
+      },
+      "bot_detection": {
+        "using_participant_events": {
+          "timeout": 600,
+          "activate_after": 1200
+        }
+      }
+    },
+    "calendar_meetings": [],
+    "metadata": {}
+  }
