@@ -3,8 +3,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import BotData from './BotStatus';
 import { useRecallWebmStreamPlayer } from '@/hooks/useRecallWebmStreamPlayer';
-import { useAudioVisualizer } from '@/hooks/useAudioVisualizer';
-import { AudioVisualizer } from './AudioVisualizer';
 
 export function Websockets() {
 
