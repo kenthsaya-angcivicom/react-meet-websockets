@@ -17,7 +17,7 @@ export default function SiteHeader() {
             variant="ghost"
             render={
               <a
-                href="https://github.com/shadcn-ui/ui"
+                href="https://github.com/kenthsaya-angcivicom/react-meet-websockets"
                 rel="noopener noreferrer"
                 target="_blank"
                 className="dark:text-foreground"

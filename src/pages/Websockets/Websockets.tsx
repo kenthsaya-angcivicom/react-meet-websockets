@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import BotData from './BotStatus';
 import { useRecallWebmStreamPlayer } from '@/hooks/useRecallWebmStreamPlayer';
+import { useAudioVisualizer } from '@/hooks/useAudioVisualizer';
+import { AudioVisualizer } from './AudioVisualizer';
 
 export function Websockets() {
 
@@ -10,13 +12,11 @@ export function Websockets() {
   const [meetingUrl, setMeetingUrl] = useState<string>('');
 
   const wsUrl = meetBot?.botId
-  ? `ws://localhost:8080/stream?botId=${encodeURIComponent(meetBot.botId)}`
-  : null;
+    ? `ws://localhost:8080/stream?botId=${encodeURIComponent(meetBot.botId)}`
+    : null;
 
-
-  const { start, stop, clear, isRunning, lastWebmUrl, webmChunkCount } =
+  const { prepareAudio, connect, start, stop, clear, isRunning: streamIsRunning, lastWebmUrl, webmChunkCount } =
     useRecallWebmStreamPlayer({ wsUrl, recorderTimesliceMs: 1000 });
-
 
   async function healthCheck() {
     console.log('Health Check');
@@ -28,18 +28,23 @@ export function Websockets() {
     return await response.json();
   }
 
-  async function createMeetBot() {
+  async function initializeMeetBot() {
+    await prepareAudio();
+
     const response = await fetch(`/api/telehealth/bot`, {
       method: 'POST',
       body: JSON.stringify({
         meetingUrl: 'https://meet.google.com/bmi-gzcx-udt',
-        botName: 'Test Bot'
+        botName: 'Test Bot' + Date.now()
       })
     });
     console.log('Response', response);
     const data = await response.json();
     setMeetBot(data.data);
     console.log('Meet Bot', data);
+
+    const url = `ws://localhost:8080/stream?botId=${encodeURIComponent(data.data.botId)}`;
+    connect(url);
   }
 
   async function clearBot() {
@@ -61,6 +66,7 @@ export function Websockets() {
 
       if (msg.type === "pcm_chunk") {
         console.log('msg', msg);
+        // pushPcm16Base64(msg);
       } else {
         console.log("ws msg", msg);
       }
@@ -71,15 +77,6 @@ export function Websockets() {
     return () => ws.close();
   }, [meetBot?.botId]);
 
-  const renderBotData = useCallback(() => {
-    if (!meetBot) return null;
-
-    console.log('Rendering Bot Data for bot', meetBot);
-    console.log('Rendering Bot Data for botId', meetBot.id);
-
-    return <BotData botId={meetBot.id || ''} />;
-  }, [meetBot]);
-
   return (
     <div className="flex flex-1 flex-col min-h-0 overflow-y-auto">
       {/* <p>Bot ID: {botId}</p> */}
@@ -88,7 +85,7 @@ export function Websockets() {
           <div className='px-4 lg:px-6'>
             <h1>Websockets</h1>
             <Button onClick={healthCheck} variant="outline">Health Check</Button>
-            <Button onClick={createMeetBot} disabled={meetBot}>Create Meet Bot</Button>
+            <Button onClick={initializeMeetBot} disabled={meetBot || streamIsRunning}>Create Meet Bot</Button>
             <Button onClick={clearBot} disabled={!meetBot} variant="destructive">Clear Bot</Button>
             <div className="grid gap-2">
               <label htmlFor="meetingUrlInput" className="text-sm font-medium">
@@ -106,12 +103,12 @@ export function Websockets() {
                 onClick={async () => {
                   try { await start(); } catch (e) { console.error(e); }
                 }}
-                disabled={!meetBot?.botId || isRunning}
+                disabled={!meetBot?.botId || streamIsRunning}
               >
                 Start Playback + WebM Encode
               </Button>
 
-              <Button onClick={stop} disabled={!isRunning} variant="outline">
+              <Button onClick={stop} disabled={!streamIsRunning} variant="outline">
                 Stop
               </Button>
 
@@ -127,7 +124,7 @@ export function Websockets() {
                 ) : null}
               </div>
 
-              {meetBot && renderBotData()}
+              {meetBot && <BotData botId={meetBot.id || ''} />}
 
             </div>
           </div>
