@@ -33,7 +33,7 @@ export default function BotData({botId}: {botId: string}) {
             return data?.data;
         },
         enabled: !!botId,
-        // refetchInterval: 1000,
+        refetchInterval: 1000,
     });  
 
   const renderContent = () => {

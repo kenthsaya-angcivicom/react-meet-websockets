@@ -1,322 +1,245 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from "react";
 
-function base64ToUint8Array(b64: string): Uint8Array {
+type RecallWsMsg = any;
+
+function base64ToUint8Array(b64: string) {
   const bin = atob(b64);
   const bytes = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
   return bytes;
 }
 
-function pcm16BytesToFloat32(bytes: Uint8Array): Float32Array {
+// Recall is little-endian PCM16 mono
+function pcm16BytesToFloat32(bytes: Uint8Array) {
   const sampleCount = Math.floor(bytes.byteLength / 2);
-  const pcm16 = new Int16Array(sampleCount);
+  const out = new Float32Array(sampleCount);
 
   for (let i = 0; i < sampleCount; i++) {
     const lo = bytes[i * 2]!;
     const hi = bytes[i * 2 + 1]!;
-    const v = (hi << 8) | lo;
-    pcm16[i] = v > 0x7fff ? v - 0x10000 : v;
+    let v = (hi << 8) | lo;
+    if (v & 0x8000) v = v - 0x10000; // signed
+    out[i] = v / 32768;
   }
 
-  const floats = new Float32Array(sampleCount);
-  for (let i = 0; i < sampleCount; i++) floats[i] = pcm16[i] / 32768;
-  return floats;
+  return out;
 }
 
-interface UseAudioFrequencyVisualizerOptions {
-  sampleRate?: number;
-  fftSize?: number; // Must be power of 2, default 256 gives 128 frequency bins
-  /**
-   * When true, prints verbose debug logs like:
-   *   [visualizer] 1 - pushPcm16Base64 called
-   */
-  debug?: boolean;
+function getPcmBase64FromMessage(msg: RecallWsMsg): string | null {
+  // supports both shapes you’ve seen:
+  // A) simplified: msg.bufferBase64
+  // B) wrapped Recall payload: msg.msg.data.data.buffer
+  return msg?.bufferBase64 ?? msg?.msg?.data?.data?.buffer ?? null;
 }
 
-interface UseAudioFrequencyVisualizerReturn {
-  audioData: Uint8Array | null;
-  isVisualizing: boolean;
-  pushPcm16Base64: (b64: string) => void;
-  /**
-   * Push already-decoded PCM float samples (mono).
-   * This is handy when another part of the app already decoded base64 -> Float32Array.
-   */
-  pushFloat32: (floats: Float32Array<ArrayBufferLike>) => void;
-  start: () => void;
-  stop: () => void;
-  clear: () => void;
-}
+export function useRecallWebmStreamPlayer(args: {
+  wsUrl: string | null;
+  sampleRate?: number; // Recall is typically 16kHz
+  recorderTimesliceMs?: number;
+  onPcmFloat32?: (pcm: Float32Array, meta: { sampleRate: number; msg: RecallWsMsg }) => void;
+  enableAudioPlayback?: boolean;
+  onAudioChunk?: (chunk: Blob, meta: { mimeType: string; chunkIndex: number }) => void;
+}) {
+  const {
+    wsUrl,
+    sampleRate = 16000,
+    recorderTimesliceMs = 1000,
+    onPcmFloat32,
+    enableAudioPlayback = false,
+    onAudioChunk,
+  } = args;
 
-export function useAudioFrequencyVisualizer(
-  options: UseAudioFrequencyVisualizerOptions = {}
-): UseAudioFrequencyVisualizerReturn {
-  const { sampleRate = 16000, fftSize = 256, debug = false } = options;
+  const [isRunning, setIsRunning] = useState(false);
+  const [lastWebmUrl, setLastWebmUrl] = useState<string | null>(null);
+  const [webmChunkCount, setWebmChunkCount] = useState(0);
 
-  // [visualizer] debug logger (keeps noise controllable)
-  const log = useCallback(
-    (...args: any[]) => {
-      if (!debug) return;
-      // eslint-disable-next-line no-console
-      console.log('[visualizer]', ...args);
-    },
-    [debug]
-  );
+  const wsRef = useRef<WebSocket | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const gainRef = useRef<GainNode | null>(null);
+  const destRef = useRef<MediaStreamAudioDestinationNode | null>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
 
-  const [audioData, setAudioData] = useState<Uint8Array | null>(null);
-  const [isVisualizing, setIsVisualizing] = useState(false);
+  const playAtRef = useRef<number>(0);
+  const lastUrlRef = useRef<string | null>(null);
+  const chunkIndexRef = useRef<number>(0);
 
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const analyserRef = useRef<AnalyserNode | null>(null);
-  const silentGainRef = useRef<GainNode | null>(null);
-  const sourceRef = useRef<AudioBufferSourceNode | null>(null);
-  const animationRef = useRef<number | null>(null);
-  const audioBufferQueueRef = useRef<AudioBuffer[]>([]);
-  const isProcessingRef = useRef(false);
-  const isVisualizingRef = useRef(false); // avoids stale state in async queue loop
-  // HMR/TDZ guard: route cross-callback calls through refs so initialization order can't break.
-  const processAudioQueueRef = useRef<(() => Promise<void>) | null>(null);
-  const pushFloat32Ref = useRef<((floats: Float32Array<ArrayBufferLike>) => void) | null>(null);
+  const stop = useCallback(() => {
+    setIsRunning(false);
 
-  // Process audio buffer queue and feed to analyser
-  const processAudioQueue = useCallback(async () => {
-    // [visualizer] 7 - this is the queue “worker”; it plays buffers (silently) into the analyser
-    if (!audioContextRef.current || !analyserRef.current) {
-      log('7 - processAudioQueue abort (missing audioContext/analyser)');
-      return;
+    try {
+      wsRef.current?.close();
+    } catch {}
+    wsRef.current = null;
+
+    try {
+      if (recorderRef.current && recorderRef.current.state !== "inactive") recorderRef.current.stop();
+    } catch {}
+    recorderRef.current = null;
+
+    try {
+      audioCtxRef.current?.close();
+    } catch {}
+    audioCtxRef.current = null;
+
+    gainRef.current = null;
+    destRef.current = null;
+
+    if (lastUrlRef.current) URL.revokeObjectURL(lastUrlRef.current);
+    lastUrlRef.current = null;
+    chunkIndexRef.current = 0;
+
+    setLastWebmUrl(null);
+  }, []);
+
+  // Must be triggered from a user gesture (e.g. button click) in most browsers.
+  // Call this FIRST in your "one click" flow, before any awaits (fetch, etc).
+  const prepareAudio = useCallback(async () => {
+    if (audioCtxRef.current) return;
+
+    const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    await audioCtx.resume();
+
+    const gain = audioCtx.createGain();
+    gain.gain.value = 1.0;
+
+    // Playback + record
+    const dest = audioCtx.createMediaStreamDestination();
+    
+    if (enableAudioPlayback) {
+      gain.connect(audioCtx.destination);
     }
-    if (isProcessingRef.current) {
-      log('7 - processAudioQueue already running');
-      return;
-    }
+    gain.connect(dest);
 
-    isProcessingRef.current = true;
-    log('8 - processAudioQueue started');
+    const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+      ? "audio/webm;codecs=opus"
+      : "audio/webm";
 
-    while (audioBufferQueueRef.current.length > 0 && isVisualizingRef.current) {
-      const buffer = audioBufferQueueRef.current.shift();
-      if (!buffer) break;
+    const recorder = new MediaRecorder(dest.stream, { mimeType, audioBitsPerSecond: 128000 });
 
-      try {
-        // [visualizer] 9 - create a source node from the queued buffer
-        const source = audioContextRef.current.createBufferSource();
-        source.buffer = buffer;
-        
-        // [visualizer] 10 - audio graph must be connected or the analyser may output zeros.
-        // We connect: source -> analyser -> silentGain(0) -> destination
-        // (silentGain makes it inaudible while keeping the graph “alive”.)
-        source.connect(analyserRef.current);
-        
-        // Store reference
-        sourceRef.current = source;
+    recorder.ondataavailable = (e) => {
+      if (!e.data || e.data.size === 0) return;
 
-        // [visualizer] 11 - start “silent playback” so analyser has time-domain/frequency data
-        source.start();
-        log('11 - source started', { durationMs: Math.round(buffer.duration * 1000) });
+      const url = URL.createObjectURL(e.data);
+      if (lastUrlRef.current) URL.revokeObjectURL(lastUrlRef.current);
+      lastUrlRef.current = url;
 
-        // Clean up after buffer duration
-        source.onended = () => {
-          source.disconnect();
-        };
+      chunkIndexRef.current += 1;
+      onAudioChunk?.(e.data, { mimeType, chunkIndex: chunkIndexRef.current });
 
-        // [visualizer] 12 - wait for this buffer to “play through” before taking next
-        // (prevents overlapping buffers from smearing frequency data)
-        await new Promise((resolve) => setTimeout(resolve, Math.max(1, buffer.duration * 1000)));
-      } catch (error) {
-        console.error('Error processing audio buffer:', error);
-      }
-    }
+      setLastWebmUrl(url);
+      setWebmChunkCount((n) => n + 1);
+    };
 
-    isProcessingRef.current = false;
-    log('13 - processAudioQueue finished', { queueLen: audioBufferQueueRef.current.length });
-  }, [log]);
-  processAudioQueueRef.current = processAudioQueue;
+    recorder.onerror = (e) => {
+      console.error("MediaRecorder error", e);
+    };
 
-  const pushFloat32 = useCallback(
-    (floats: Float32Array<ArrayBufferLike>) => {
-      if (typeof window === 'undefined') return;
-      log('1 - pushFloat32 called');
-      // [visualizer] 2 - if audio context isn’t started, we can’t create AudioBuffers yet
-      if (!audioContextRef.current) {
-        log('2 - ignored (call start() first to create AudioContext/Analyser)');
-        return;
+    recorder.start(recorderTimesliceMs);
+
+    audioCtxRef.current = audioCtx;
+    gainRef.current = gain;
+    destRef.current = dest;
+    recorderRef.current = recorder;
+    playAtRef.current = audioCtx.currentTime;
+  }, [enableAudioPlayback, onAudioChunk, recorderTimesliceMs]);
+
+  // Connect the websocket after you have a URL (can be after awaits).
+  // Requires prepareAudio() to have been called first.
+  const connect = useCallback(
+    (url: string) => {
+      if (!url) throw new Error("connect(url): url is required");
+
+      const audioCtx = audioCtxRef.current;
+      const gain = gainRef.current;
+      if (!audioCtx || !gain) {
+        throw new Error("Call prepareAudio() before connect()");
       }
 
-      try {
-        // [visualizer] NOTE: TypeScript/lib.dom may type AudioBuffer.copyToChannel as requiring
-        // Float32Array backed by ArrayBuffer (not SharedArrayBuffer). Copying into a fresh
-        // Float32Array normalizes the backing store and avoids TS type conflicts.
-        const f32 = new Float32Array(floats);
+      // If already connected, stop first
+      if (wsRef.current) stop();
 
-        // [visualizer] 3 - wrap float PCM into an AudioBuffer
-        const audioBuffer = audioContextRef.current.createBuffer(1, f32.length, sampleRate);
-        audioBuffer.copyToChannel(f32, 0);
+      const ws = new WebSocket(url);
 
-        // [visualizer] 4 - enqueue buffer; we’ll drain sequentially
-        audioBufferQueueRef.current.push(audioBuffer);
-        log('4 - queued AudioBuffer', {
-          frames: audioBuffer.length,
-          durationMs: Math.round(audioBuffer.duration * 1000),
-          queueLen: audioBufferQueueRef.current.length,
-        });
+      ws.onopen = () => {
+        console.log("Recall stream ws open");
+        setIsRunning(true);
+      };
 
-        // [visualizer] 5 - kick the queue worker if it’s not already running
-        if (!isProcessingRef.current) {
-          processAudioQueueRef.current?.();
-        }
-      } catch (error) {
-        console.error('Error processing float PCM:', error);
-      }
-    },
-    [sampleRate, log],
-  );
-  pushFloat32Ref.current = pushFloat32;
+      ws.onclose = () => {
+        console.log("Recall stream ws closed");
+        stop();
+      };
 
-  // Process PCM chunk and add to queue
-  const pushPcm16Base64 = useCallback(
-    (b64: string) => {
-      if (typeof window === 'undefined') return;
-      log('1 - pushPcm16Base64 called');
-      // [visualizer] 2 - if audio context isn’t started, we can’t create AudioBuffers yet
-      if (!audioContextRef.current) {
-        log('2 - ignored (call start() first to create AudioContext/Analyser)');
-        return;
-      }
+      ws.onerror = (e) => {
+        console.error("Recall stream ws error", e);
+        stop();
+      };
 
-      try {
-        // [visualizer] 3 - decode base64 -> bytes -> float32 PCM
+      ws.onmessage = (ev) => {
+        const msg = JSON.parse(ev.data);
+        const b64 = getPcmBase64FromMessage(msg);
+        if (!b64) return;
+
         const bytes = base64ToUint8Array(b64);
         if (bytes.byteLength < 2) return;
 
         const floats = pcm16BytesToFloat32(bytes);
-        // [visualizer] 4 - reuse the float pipeline
-        pushFloat32Ref.current?.(floats);
-      } catch (error) {
-        console.error('Error processing PCM chunk:', error);
-      }
+
+        onPcmFloat32?.(floats, { sampleRate, msg });
+
+        const buf = audioCtx.createBuffer(1, floats.length, sampleRate);
+        buf.copyToChannel(floats, 0);
+
+        const src = audioCtx.createBufferSource();
+        src.buffer = buf;
+        src.connect(gain);
+
+        const now = audioCtx.currentTime;
+        if (playAtRef.current < now) playAtRef.current = now; // catch up if we fall behind
+        src.start(playAtRef.current);
+        playAtRef.current += buf.duration;
+      };
+
+      wsRef.current = ws;
     },
-    [log]
+    [onPcmFloat32, sampleRate, stop],
   );
 
-  // Animation loop to get frequency data.
-  // NOTE: do NOT depend on React state for the loop condition, otherwise the first call to
-  // animate() (before state updates commit) will see stale `isVisualizing=false` and stop.
-  // We use `isVisualizingRef.current` instead so this keeps running after `start()`.
-  const animate = useCallback(() => {
-    if (!analyserRef.current) {
-      animationRef.current = null;
-      return;
-    }
+  // Convenience: old API “start()” still works.
+  // If you want one-click seamless: call prepareAudio() first (same click), then call start(urlFromBot).
+  const start = useCallback(
+    async (overrideWsUrl?: string) => {
+      const url = overrideWsUrl ?? wsUrl;
+      if (!url) throw new Error("wsUrl is required");
 
-    const analyser = analyserRef.current;
-    // [visualizer] 14 - pull frequency bins (0..255) and store in React state for UI rendering
-    const dataArray = new Uint8Array(analyser.frequencyBinCount);
-    analyser.getByteFrequencyData(dataArray);
-    setAudioData(new Uint8Array(dataArray));
+      await prepareAudio();
+      connect(url);
+    },
+    [wsUrl, prepareAudio, connect],
+  );
 
-    if (isVisualizingRef.current) {
-      animationRef.current = requestAnimationFrame(animate);
-    } else {
-      animationRef.current = null;
-    }
-  }, []);
-
-  // Start visualizer
-  const start = useCallback(async () => {
-    if (isVisualizing) return;
-
-    try {
-      log('start - creating AudioContext + Analyser');
-      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-      await audioContext.resume();
-
-      const analyser = audioContext.createAnalyser();
-      analyser.fftSize = fftSize;
-      analyser.smoothingTimeConstant = 0.8;
-
-      // [visualizer] IMPORTANT: keep the analyser in a live audio graph
-      // Otherwise, some browsers will yield all-zero frequency data.
-      //
-      // Graph: analyser -> silentGain(0) -> destination
-      const silentGain = audioContext.createGain();
-      silentGain.gain.value = 0; // silent
-      analyser.connect(silentGain);
-      silentGain.connect(audioContext.destination);
-
-      audioContextRef.current = audioContext;
-      analyserRef.current = analyser;
-      silentGainRef.current = silentGain;
-
-      setIsVisualizing(true);
-      isVisualizingRef.current = true;
-
-      // If a previous RAF loop is still around (HMR / fast re-click), cancel it.
-      if (animationRef.current) cancelAnimationFrame(animationRef.current);
-      animate();
-      log('start - visualizing = true', { fftSize, bins: analyser.frequencyBinCount });
-    } catch (error) {
-      console.error('Error starting frequency visualizer:', error);
-    }
-  }, [fftSize, animate, isVisualizing, log]);
-
-  // Stop visualizer
-  const stop = useCallback(() => {
-    log('stop - tearing down');
-    setIsVisualizing(false);
-    isVisualizingRef.current = false;
-
-    if (animationRef.current) {
-      cancelAnimationFrame(animationRef.current);
-      animationRef.current = null;
-    }
-
-    if (sourceRef.current) {
-      try {
-        sourceRef.current.disconnect();
-      } catch {}
-      sourceRef.current = null;
-    }
-
-    if (silentGainRef.current) {
-      try {
-        silentGainRef.current.disconnect();
-      } catch {}
-      silentGainRef.current = null;
-    }
-
-    if (audioContextRef.current) {
-      try {
-        audioContextRef.current.close();
-      } catch {}
-      audioContextRef.current = null;
-    }
-
-    analyserRef.current = null;
-    setAudioData(null);
-    audioBufferQueueRef.current = [];
-    isProcessingRef.current = false;
-  }, []);
-
-  // Clear data
   const clear = useCallback(() => {
-    log('clear - dropping buffered audio + last visual data');
-    setAudioData(null);
-    audioBufferQueueRef.current = [];
-  }, [log]);
+    setIsRunning(false);
+    setLastWebmUrl(null);
+    setWebmChunkCount(0);
+    chunkIndexRef.current = 0;
+  }, []);
 
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      stop();
-    };
-  }, [stop]);
+  // cleanup on unmount
+  useEffect(() => stop, [stop]);
 
   return {
-    audioData,
-    isVisualizing,
-    pushPcm16Base64,
-    pushFloat32,
+    // for one-click flows:
+    prepareAudio,
+    connect,
+
+    // convenient combined call:
     start,
+
     stop,
     clear,
+    isRunning,
+    lastWebmUrl,
+    webmChunkCount,
   };
 }

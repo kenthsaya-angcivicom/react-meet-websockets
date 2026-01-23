@@ -43,6 +43,7 @@ export function useRecallWebmStreamPlayer(args: {
   const [isRunning, setIsRunning] = useState(false);
   const [lastWebmUrl, setLastWebmUrl] = useState<string | null>(null);
   const [webmChunkCount, setWebmChunkCount] = useState(0);
+  const [playbackEnabled, setPlaybackEnabled] = useState(true);
 
   const wsRef = useRef<WebSocket | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -52,6 +53,22 @@ export function useRecallWebmStreamPlayer(args: {
 
   const playAtRef = useRef<number>(0);
   const lastUrlRef = useRef<string | null>(null);
+
+  const togglePlayback = useCallback(() => {
+    if (!gainRef.current) return;
+    
+    const newState = !playbackEnabled;
+    gainRef.current.gain.value = newState ? 1.0 : 0.0;
+    setPlaybackEnabled(newState);
+  }, [playbackEnabled]);
+
+   // Function to set playback state explicitly
+   const setPlayback = useCallback((enabled: boolean) => {
+    if (!gainRef.current) return;
+    
+    gainRef.current.gain.value = enabled ? 1.0 : 0.0;
+    setPlaybackEnabled(enabled);
+  }, []);
 
   const stop = useCallback(() => {
     setIsRunning(false);
@@ -89,7 +106,7 @@ export function useRecallWebmStreamPlayer(args: {
     await audioCtx.resume();
 
     const gain = audioCtx.createGain();
-    gain.gain.value = 1.0;
+    gain.gain.value = playbackEnabled ? 1.0 : 0.0; // Initialize with current playback state
 
     // Playback + record
     const dest = audioCtx.createMediaStreamDestination();
@@ -124,12 +141,16 @@ export function useRecallWebmStreamPlayer(args: {
     destRef.current = dest;
     recorderRef.current = recorder;
     playAtRef.current = audioCtx.currentTime;
-  }, [recorderTimesliceMs]);
+  }, [recorderTimesliceMs, playbackEnabled]);
 
   // Connect the websocket after you have a URL (can be after awaits).
   // Requires prepareAudio() to have been called first.
   const connect = useCallback(
     (url: string) => {
+
+      console.log("Connecting to websocket", url);
+
+
       if (!url) throw new Error("connect(url): url is required");
 
       const audioCtx = audioCtxRef.current;
@@ -159,7 +180,10 @@ export function useRecallWebmStreamPlayer(args: {
       };
 
       ws.onmessage = (ev) => {
+
+        
         const msg = JSON.parse(ev.data);
+        console.log("Message received", msg);
         const b64 = getPcmBase64FromMessage(msg);
         if (!b64) return;
 
@@ -223,5 +247,9 @@ export function useRecallWebmStreamPlayer(args: {
     isRunning,
     lastWebmUrl,
     webmChunkCount,
+
+    playbackEnabled,
+    togglePlayback,
+    setPlayback,
   };
 }
