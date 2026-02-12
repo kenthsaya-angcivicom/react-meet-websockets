@@ -28,12 +28,5 @@ export default defineConfig({
       'Content-Security-Policy': `frame-ancestors 'none'`,
     },
     allowedHosts: true,
-    proxy: {
-      '/api/telehealth': {
-        target: 'http://localhost:8080',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api\/telehealth/, '/telehealth'),
-      },
-    },
   },
 })

@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { API_URL } from "../pages/Websockets/Websockets";
 
 type RecallWsMsg = any;
+
+export function getWebsocketUrl(botId: string) {
+  return `ws://${API_URL}botId=${encodeURIComponent(botId)}`;
+}
 
 function base64ToUint8Array(b64: string) {
   const bin = atob(b64);
@@ -32,18 +37,18 @@ function getPcmBase64FromMessage(msg: RecallWsMsg): string | null {
   return msg?.bufferBase64 ?? msg?.msg?.data?.data?.buffer ?? null;
 }
 
-export function useRecallWebmStreamPlayer(args: {
-  wsUrl: string | null;
+export function usePcmToWebmStreamPlayer(args: {
   sampleRate?: number; // Recall is typically 16kHz
   recorderTimesliceMs?: number;
   onPcmFloat32?: (pcm: Float32Array, meta: { sampleRate: number; msg: RecallWsMsg }) => void;
 }) {
-  const { wsUrl, sampleRate = 16000, recorderTimesliceMs = 1000, onPcmFloat32 } = args;
+  const { sampleRate = 16000, recorderTimesliceMs = 1000, onPcmFloat32 } = args;
 
   const [isRunning, setIsRunning] = useState(false);
   const [lastWebmUrl, setLastWebmUrl] = useState<string | null>(null);
   const [webmChunkCount, setWebmChunkCount] = useState(0);
   const [playbackEnabled, setPlaybackEnabled] = useState(true);
+  const [botStatus, setBotStatus] = useState<string | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -103,6 +108,7 @@ export function useRecallWebmStreamPlayer(args: {
     if (audioCtxRef.current) return;
 
     const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    console.log('[DEBUG AUDIO] AudioContext sampleRate:', audioCtx.sampleRate);  
     await audioCtx.resume();
 
     const gain = audioCtx.createGain();
@@ -165,25 +171,31 @@ export function useRecallWebmStreamPlayer(args: {
       const ws = new WebSocket(url);
 
       ws.onopen = () => {
-        console.log("Recall stream ws open");
+        console.log("Meet audio stream ws open");
         setIsRunning(true);
       };
 
       ws.onclose = () => {
-        console.log("Recall stream ws closed");
+        console.log("Meet audio stream ws closed");
         stop();
       };
 
       ws.onerror = (e) => {
-        console.error("Recall stream ws error", e);
+        console.error("Meet audio stream ws error", e);
         stop();
       };
 
       ws.onmessage = (ev) => {
 
-        
         const msg = JSON.parse(ev.data);
         console.log("Message received", msg);
+
+        if (msg.type === 'bot_status') {
+          setBotStatus(msg.status);
+          return;
+        }
+        
+
         const b64 = getPcmBase64FromMessage(msg);
         if (!b64) return;
 
@@ -215,14 +227,13 @@ export function useRecallWebmStreamPlayer(args: {
   // Convenience: old API “start()” still works.
   // If you want one-click seamless: call prepareAudio() first (same click), then call start(urlFromBot).
   const start = useCallback(
-    async (overrideWsUrl?: string) => {
-      const url = overrideWsUrl ?? wsUrl;
+    async (botId: string) => {
+      const url = getWebsocketUrl(botId);
       if (!url) throw new Error("wsUrl is required");
-
       await prepareAudio();
       connect(url);
     },
-    [wsUrl, prepareAudio, connect],
+    [prepareAudio, connect],
   );
 
   const clear = useCallback(() => {
@@ -251,5 +262,6 @@ export function useRecallWebmStreamPlayer(args: {
     playbackEnabled,
     togglePlayback,
     setPlayback,
+    botStatus,
   };
 }

@@ -2,20 +2,17 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import BotData from './BotStatus';
-import { useRecallWebmStreamPlayer } from '@/hooks/useRecallWebmStreamPlayer';
+import { usePcmToWebmStreamPlayer } from '@/hooks/useWebsocketAudio';
 import { useAudioVisualizer } from '@/hooks/useAudioVisualizer';
 import { AudioVisualizer } from './AudioVisualizer';
 import { ArrowUpRightIcon } from 'lucide-react';
 
+export const API_URL = 'localhost:8080';
 
 export function Websockets() {
 
   const [meetingUrl, setMeetingUrl] = useState('https://meet.google.com/bmi-gzcx-udt');
   const [meetBot, setMeetBot] = useState<any>(null);
-
-  const wsUrl = meetBot?.botId
-    ? `ws://localhost:8080/stream?botId=${encodeURIComponent(meetBot.botId)}`
-    : null;
 
   const ampViz = useAudioVisualizer({
     sampleRate: 16000,
@@ -25,8 +22,7 @@ export function Websockets() {
   });
 
   const streamPlayer =
-    useRecallWebmStreamPlayer({
-      wsUrl,
+    usePcmToWebmStreamPlayer({
       recorderTimesliceMs: 1000,
       onPcmFloat32: (pcm) => {
         ampViz.pushFloat32(pcm);
@@ -35,33 +31,33 @@ export function Websockets() {
 
   async function healthCheck() {
     console.log('Health Check');
-    const response = await fetch(`/api/telehealth/health`);
-    console.log('Response', response);
+    const response = await fetch(`http://${API_URL}/api/telehealth/health`);
+    const data = await response.json();
+    console.log('Response', data);
     if (!response.ok) {
       throw new Error(`Failed to check health: ${response.statusText}`);
     }
-    return await response.json();
-  }
+    return data;
+}
 
   async function initializeMeetBot() {
     // One-click flow: prepare audio + start visualizer during the user gesture,
     // BEFORE any awaits that might break autoplay permissions.
     await streamPlayer.prepareAudio();
 
-    const response = await fetch(`/api/telehealth/bot`, {
+    const response = await fetch(`http://${API_URL}/api/telehealth/bot`, {
       method: 'POST',
       body: JSON.stringify({
         meetingUrl: 'https://meet.google.com/bmi-gzcx-udt',
         botName: 'Test Bot ' + Date.now()
       })
     });
-    console.log('Response', response);
     const data = await response.json();
+    console.log('Response', data);
     setMeetBot(data);
     console.log('Meet Bot', data);
 
-    const url = `ws://localhost:8080/stream?botId=${encodeURIComponent(data.data.id)}`;
-    await streamPlayer.start(url);
+    await streamPlayer.start(data.data.connectionId);
   }
 
   async function clearBot() {
@@ -110,7 +106,7 @@ export function Websockets() {
                 onClick={async () => {
                   try {
                     // If user manually starts, ensure the visualizer is started too.
-                    await streamPlayer.start();
+                    await streamPlayer.start(meetBot.data.connectionId);
                   } catch (e) {
                     console.error(e);
                   }
@@ -149,7 +145,12 @@ export function Websockets() {
                 </div>
               {/* )} */}
 
+              <div>
+                <pre>{JSON.stringify(streamPlayer.botStatus, null, 2)}</pre>
+              </div>
+
               {meetBot && <BotData botId={meetBot.id || ''} />}
+              {meetBot && <pre>{JSON.stringify(meetBot, null, 2)}</pre>}
 
             </div>
           </div>
